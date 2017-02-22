@@ -1,3 +1,6 @@
-# webrtc helper
+# webrtc-connect
+`
+npm install webrtc-connect
+`
 
-npm install paulem-webrtc
+You will need a custom signaling server to use this.
