@@ -1,0 +1,12 @@
+temp
+
+debug.log
+npm-debug.log*
+
+.tmp
+.idea
+.vscode
+
+/dist
+/build
+/node_modules
