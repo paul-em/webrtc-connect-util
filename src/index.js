@@ -224,7 +224,7 @@ class WebRTC {
 
   signal(fn, data) {
     if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-      this.socket.emit(JSON.stringify({
+      this.socket.send(JSON.stringify({
         fn,
         data,
       }));
