@@ -41,10 +41,10 @@ class WebRTC {
     return url;
   }
 
-  constructor(endpoint, room, key, localStream) {
+  constructor(endpoint, room, id, localStream) {
     this.endpoint = endpoint;
     this.room = room;
-    this.key = key;
+    this.id = id;
     this.members = [];
     this.listeners = {};
     this.localStream = localStream;
@@ -72,9 +72,9 @@ class WebRTC {
     this.socket.onmessage = (message) => {
       let msg;
       try {
-        msg = JSON.stringify(message);
+        msg = JSON.parse(message.data);
       } catch (e) {
-        this.trigger(WebRTC.EVENT_ERROR, new Error(`Parsing signaling server message: ${message}`));
+        this.trigger(WebRTC.EVENT_ERROR, new Error(`Parsing signaling server message: ${message.data}`));
         return;
       }
       const localName = `signal${msg.fn.substr(0, 1).toUpperCase() + msg.fn.substr(1)}`;
@@ -108,7 +108,7 @@ class WebRTC {
         });
       }
     }
-    this.send('leave');
+    this.signal('leave');
     const socket = this.socket;
     this.destroyed = true;
     this.listeners = {};
@@ -119,9 +119,23 @@ class WebRTC {
   }
 
   signalJoin(senderId) {
+    if (senderId === this.id) {
+      return;
+    }
     const existing = this.members.find(loopMember => loopMember.id === senderId);
     if (!existing) {
-      this.members.add({ id: senderId, connection: null });
+      const newMember = { id: senderId, connection: null };
+      this.members.push(newMember);
+      this.addPeerConnection(senderId);
+      newMember.connection.createOffer((sessionDescription) => {
+        this.signal('offer', {
+          target: senderId,
+          payload: sessionDescription,
+        });
+        newMember.connection.setLocalDescription(sessionDescription);
+      }, (err) => {
+        this.trigger(WebRTC.EVENT_ERROR, err);
+      }, this.mediaConstraints);
     }
   }
 
@@ -145,20 +159,19 @@ class WebRTC {
   }
 
   signalOffer(senderId, offer) {
-    const member = this.members.find(loopMember => loopMember.id === senderId);
-    if (member) {
-      this.addPeerConnection(senderId);
-      member.connection.setRemoteDescription(new RTCSessionDescription(offer));
-      member.connection.createAnswer((sessionDescription) => {
-        member.connection.setLocalDescription(sessionDescription);
-        this.signal('answer', {
-          target: senderId,
-          payload: sessionDescription,
-        });
-      }, (err) => {
-        this.trigger(WebRTC.EVENT_ERROR, err);
-      }, this.mediaConstraints);
-    }
+    const member = { id: senderId, connection: null };
+    this.members.push(member);
+    this.addPeerConnection(senderId);
+    member.connection.setRemoteDescription(new RTCSessionDescription(offer));
+    member.connection.createAnswer((sessionDescription) => {
+      member.connection.setLocalDescription(sessionDescription);
+      this.signal('answer', {
+        target: senderId,
+        payload: sessionDescription,
+      });
+    }, (err) => {
+      this.trigger(WebRTC.EVENT_ERROR, err);
+    }, this.mediaConstraints);
   }
 
   signalAnswer(senderId, answer) {
