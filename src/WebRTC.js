@@ -45,7 +45,7 @@ class WebRTC {
     this.endpoint = endpoint;
     this.room = room;
     this.id = id;
-    this.members = [];
+    this.remote = null;
     this.listeners = {};
     this.localStream = localStream;
     this.destroyed = false;
@@ -122,17 +122,15 @@ class WebRTC {
     if (senderId === this.id) {
       return;
     }
-    const existing = this.members.find(loopMember => loopMember.id === senderId);
-    if (!existing) {
-      const newMember = { id: senderId, connection: null };
-      this.members.push(newMember);
+    if (!this.remote) {
+      this.remote = { id: senderId, connection: null };
       this.addPeerConnection(senderId);
-      newMember.connection.createOffer((sessionDescription) => {
+      this.remote.connection.createOffer((sessionDescription) => {
         this.signal('offer', {
           target: senderId,
           payload: sessionDescription,
         });
-        newMember.connection.setLocalDescription(sessionDescription);
+        this.remote.connection.setLocalDescription(sessionDescription);
       }, (err) => {
         this.trigger(WebRTC.EVENT_ERROR, err);
       }, this.mediaConstraints);
@@ -140,31 +138,28 @@ class WebRTC {
   }
 
   signalLeave(senderId) {
-    const existing = this.members.find(loopMember => loopMember.id === senderId);
-    if (existing) {
-      this.members.splice(this.members.indexOf(existing), 1);
+    if (this.remote && this.remote.id === senderId) {
+      this.remote = null;
+      this.hangup();
     }
   }
 
   signalIceCandidate(senderId, iceCandidate) {
-    if (iceCandidate.candidate) {
-      const member = this.members.find(loopMember => loopMember.id === senderId);
-      if (member) {
-        member.connection.addIceCandidate(new RTCIceCandidate({
-          sdpMLineIndex: iceCandidate.label,
-          candidate: iceCandidate.candidate,
-        }));
-      }
+    if (iceCandidate.candidate && this.remote && this.remote.id === senderId) {
+      this.remote.connection.addIceCandidate(new RTCIceCandidate({
+        sdpMLineIndex: iceCandidate.label,
+        candidate: iceCandidate.candidate,
+      }));
+
     }
   }
 
   signalOffer(senderId, offer) {
-    const member = { id: senderId, connection: null };
-    this.members.push(member);
+    this.remote = { id: senderId, connection: null };
     this.addPeerConnection(senderId);
-    member.connection.setRemoteDescription(new RTCSessionDescription(offer));
-    member.connection.createAnswer((sessionDescription) => {
-      member.connection.setLocalDescription(sessionDescription);
+    this.remote.connection.setRemoteDescription(new RTCSessionDescription(offer));
+    this.remote.connection.createAnswer((sessionDescription) => {
+      this.remote.connection.setLocalDescription(sessionDescription);
       this.signal('answer', {
         target: senderId,
         payload: sessionDescription,
@@ -175,15 +170,13 @@ class WebRTC {
   }
 
   signalAnswer(senderId, answer) {
-    const member = this.members.find(loopMember => loopMember.id === senderId);
-    if (member) {
-      member.connection.setRemoteDescription(new RTCSessionDescription(answer));
+    if (this.remote && this.remote.id === senderId) {
+      this.remote.connection.setRemoteDescription(new RTCSessionDescription(answer));
     }
   }
 
   addPeerConnection(id) {
-    const member = this.members.find(loopMember => loopMember.id === id);
-    if (member) {
+    if (this.remote && this.remote.id === id) {
       const pc = new RTCPeerConnection({ iceServers: WebRTC.iceServers }, this.mediaConstraints);
       pc.onicecandidate = (event) => {
         if (event.candidate) {
@@ -200,22 +193,22 @@ class WebRTC {
         }
       };
       pc.onaddstream = (event) => {
-        pc.streamURL = WebRTC.getStreamUrl(event.stream);
-        member.remoteStreamURL = pc.streamURL;
         pc.stream = event.stream;
         this.trigger(WebRTC.EVENT_CONNECTED, event.stream);
       };
       pc.onremovestream = () => {
-        member.connection = null;
-        member.remoteStreamURL = null;
-        this.trigger(WebRTC.EVENT_END, id);
+        if (this.remote && this.remote.id === id) {
+          this.remote.connection = null;
+          this.remote.remoteStreamURL = null;
+          this.trigger(WebRTC.EVENT_END, id);
+        }
       };
       if (this.localStream) {
         pc.addStream(this.localStream);
       }
       pc.streamURL = '';
       pc.stream = '';
-      member.connection = pc;
+      this.remote.connection = pc;
       this.trigger(WebRTC.EVENT_FOUND_REMOTE);
     }
   }
