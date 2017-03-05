@@ -41,6 +41,28 @@ class WebRTC {
     return url;
   }
 
+  static stopStream(stream) {
+    if (stream) {
+      if (stream.stop) {
+        stream.stop();
+      }
+      if (stream.getVideoTracks && stream.getVideoTracks()[0]) {
+        stream.getVideoTracks()[0].enabled = false;
+      }
+      if (stream.getAudioTracks && stream.getAudioTracks()[0]) {
+        stream.getAudioTracks()[0].enabled = false;
+      }
+      if (stream.getTracks) {
+        const tracks = stream.getTracks();
+        tracks.forEach((track) => {
+          if (track && track.stop) {
+            track.stop();
+          }
+        });
+      }
+    }
+  }
+
   constructor(endpoint, room, id, localStream) {
     this.endpoint = endpoint;
     this.room = room;
@@ -89,24 +111,9 @@ class WebRTC {
     if (this.destroyed) {
       return;
     }
-    if (this.localStream) {
-      if (this.localStream.stop) {
-        this.localStream.stop();
-      }
-      if (this.localStream.getVideoTracks && this.localStream.getVideoTracks()[0]) {
-        this.localStream.getVideoTracks()[0].enabled = false;
-      }
-      if (this.localStream.getAudioTracks && this.localStream.getAudioTracks()[0]) {
-        this.localStream.getAudioTracks()[0].enabled = false;
-      }
-      if (this.localStream.getTracks) {
-        const tracks = this.localStream.getTracks();
-        tracks.forEach((track) => {
-          if (track && track.stop) {
-            track.stop();
-          }
-        });
-      }
+    WebRTC.stopStream(this.localStream);
+    if (this.remote && this.remote.connection && this.remote.connection.stream) {
+      WebRTC.stopStream(this.remote.connection.stream);
     }
     this.signal('leave');
     const socket = this.socket;
@@ -229,6 +236,7 @@ class WebRTC {
   }
 
   signal(fn, data) {
+    this.trigger(WebRTC.EVENT_SIGNAL_SEND, {fn, data});
     if (this.socket && this.socket.readyState === WebSocket.OPEN) {
       this.socket.send(JSON.stringify({
         fn,
@@ -242,6 +250,7 @@ WebRTC.EVENT_START = 'start';
 WebRTC.EVENT_END = 'end';
 WebRTC.EVENT_ERROR = 'error';
 WebRTC.EVENT_SIGNAL_MESSAGE = 'signalMessage';
+WebRTC.EVENT_SIGNAL_SEND = 'signalSend';
 WebRTC.EVENT_CONNECTED = 'connected';
 WebRTC.EVENT_FOUND_REMOTE = 'foundRemote';
 WebRTC.availableDevices = availableDevices;
