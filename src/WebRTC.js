@@ -203,7 +203,7 @@ class WebRTC {
         pc.streamURL = WebRTC.getStreamUrl(event.stream);
         member.remoteStreamURL = pc.streamURL;
         pc.stream = event.stream;
-        this.trigger(WebRTC.EVENT_CONNECTED);
+        this.trigger(WebRTC.EVENT_CONNECTED, event.stream);
       };
       pc.onremovestream = () => {
         member.connection = null;
