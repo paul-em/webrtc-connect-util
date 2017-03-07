@@ -111,18 +111,19 @@ class WebRTC {
     if (this.destroyed) {
       return;
     }
+    this.destroyed = true;
+    this.trigger(WebRTC.EVENT_END);
     WebRTC.stopStream(this.localStream);
     if (this.remote && this.remote.connection && this.remote.connection.stream) {
       WebRTC.stopStream(this.remote.connection.stream);
     }
     this.signal('leave');
     const socket = this.socket;
-    this.destroyed = true;
     this.listeners = {};
     this.socket = null;
     setTimeout(() => {
       socket.close();
-    }, 100);
+    }, 1000);
   }
 
   signalJoin(senderId) {
@@ -157,7 +158,6 @@ class WebRTC {
         sdpMLineIndex: iceCandidate.label,
         candidate: iceCandidate.candidate,
       }));
-
     }
   }
 
@@ -200,14 +200,21 @@ class WebRTC {
         }
       };
       pc.onaddstream = (event) => {
-        pc.stream = event.stream;
-        this.trigger(WebRTC.EVENT_CONNECTED, event.stream);
+        if (!pc.stream) {
+          pc.stream = event.stream;
+          this.trigger(WebRTC.EVENT_CONNECTED, event.stream);
+        }
+      };
+      pc.ontrack = (event) => {
+        if (!pc.stream) {
+          pc.stream = event.streams[0];
+          this.trigger(WebRTC.EVENT_CONNECTED, event.streams[0]);
+        }
       };
       pc.onremovestream = () => {
         if (this.remote && this.remote.id === id) {
           this.remote.connection = null;
           this.remote.remoteStreamURL = null;
-          this.trigger(WebRTC.EVENT_END, id);
         }
       };
       if (this.localStream) {
@@ -236,7 +243,7 @@ class WebRTC {
   }
 
   signal(fn, data) {
-    this.trigger(WebRTC.EVENT_SIGNAL_SEND, {fn, data});
+    this.trigger(WebRTC.EVENT_SIGNAL_SEND, { fn, data });
     if (this.socket && this.socket.readyState === WebSocket.OPEN) {
       this.socket.send(JSON.stringify({
         fn,
@@ -257,18 +264,18 @@ WebRTC.availableDevices = availableDevices;
 WebRTC.supported = supported;
 WebRTC.iceServers = [
   {
-    url: 'stun:148.251.126.74:5349',
+    urls: 'stun:148.251.126.74:5349',
   },
   {
-    url: 'turn:148.251.126.74:5349',
+    urls: 'turn:148.251.126.74:5349',
     username: 'vl',
     credential: 'bfPB1VMy',
   },
   {
-    url: 'stun:148.251.126.74:3478',
+    urls: 'stun:148.251.126.74:3478',
   },
   {
-    url: 'turn:148.251.126.74:3478',
+    urls: 'turn:148.251.126.74:3478',
     username: 'vl',
     credential: 'bfPB1VMy',
   },
