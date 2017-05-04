@@ -28,7 +28,9 @@ if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
   availableDevices.cam = true;
   availableDevices.mic = true;
 }
-const supported = !!(URL && URL.createObjectURL && RTCPeerConnection && document.location.protocol === 'https:');
+
+const protocolSupport = document.location.protocol === 'https:' || document.location.hostname === 'localhost';
+const supported = !!(URL && URL.createObjectURL && RTCPeerConnection && protocolSupport);
 
 class WebRTC {
   static getStreamUrl(stream) {
