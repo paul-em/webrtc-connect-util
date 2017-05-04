@@ -71,6 +71,7 @@ class WebRTC {
         .toString(16)
         .substring(1);
     }
+
     return s4() + s4() + s4();
   }
 
@@ -84,7 +85,7 @@ class WebRTC {
     this.roomType = props.roomType;
     this.master = this.roomType === WebRTC.ROOM_TYPE_1_TO_N && props.master;
     this.id = props.id || WebRTC.guid();
-    this.remote = null;
+    this.remotes = [];
     this.listeners = {};
     this.localStream = props.localStream;
     this.destroyed = false;
@@ -100,6 +101,7 @@ class WebRTC {
         id: this.id,
         room: this.room,
         type: this.roomType,
+        master: this.master,
       });
       this.trigger(WebRTC.EVENT_START);
     };
@@ -132,9 +134,11 @@ class WebRTC {
     this.destroyed = true;
     this.trigger(WebRTC.EVENT_END);
     WebRTC.stopStream(this.localStream);
-    if (this.remote && this.remote.connection && this.remote.connection.stream) {
-      WebRTC.stopStream(this.remote.connection.stream);
-    }
+    this.remotes.forEach((remote) => {
+      if (remote && remote.connection && remote.connection.stream) {
+        WebRTC.stopStream(remote.connection.stream);
+      }
+    });
     this.signal('leave');
     const socket = this.socket;
     this.listeners = {};
@@ -148,15 +152,17 @@ class WebRTC {
     if (senderId === this.id) {
       return;
     }
-    if (!this.remote) {
-      this.remote = { id: senderId, connection: null };
+    const existing = this.remotes.find(remote => remote.id === senderId);
+    if (!existing) {
+      const remote = { id: senderId, connection: null };
+      this.remotes.push(remote);
       this.addPeerConnection(senderId);
-      this.remote.connection.createOffer((sessionDescription) => {
+      remote.connection.createOffer((sessionDescription) => {
         this.signal('offer', {
           target: senderId,
           payload: sessionDescription,
         });
-        this.remote.connection.setLocalDescription(sessionDescription);
+        remote.connection.setLocalDescription(sessionDescription);
       }, (err) => {
         this.trigger(WebRTC.EVENT_ERROR, err);
       }, this.mediaConstraints);
@@ -164,15 +170,16 @@ class WebRTC {
   }
 
   signalLeave(senderId) {
-    if (this.remote && this.remote.id === senderId) {
-      this.remote = null;
-      this.hangup();
+    const remoteIndex = this.remotes.findIndex(remote => remote.id === senderId);
+    if (remoteIndex !== -1) {
+      this.remotes.splice(remoteIndex, 1);
     }
   }
 
   signalIceCandidate(senderId, iceCandidate) {
-    if (iceCandidate.candidate && this.remote && this.remote.id === senderId) {
-      this.remote.connection.addIceCandidate(new RTCIceCandidate({
+    const existing = this.remotes.find(remote => remote.id === senderId);
+    if (iceCandidate.candidate && existing && existing.id === senderId) {
+      existing.connection.addIceCandidate(new RTCIceCandidate({
         sdpMLineIndex: iceCandidate.label,
         candidate: iceCandidate.candidate,
       }));
@@ -180,11 +187,16 @@ class WebRTC {
   }
 
   signalOffer(senderId, offer) {
-    this.remote = { id: senderId, connection: null };
+    const remoteIndex = this.remotes.findIndex(remote => remote.id === senderId);
+    if (remoteIndex !== -1) {
+      this.remotes.splice(remoteIndex, 1);
+    }
+    const remote = { id: senderId, connection: null };
+    this.remotes.push(remote);
     this.addPeerConnection(senderId);
-    this.remote.connection.setRemoteDescription(new RTCSessionDescription(offer));
-    this.remote.connection.createAnswer((sessionDescription) => {
-      this.remote.connection.setLocalDescription(sessionDescription);
+    remote.connection.setRemoteDescription(new RTCSessionDescription(offer));
+    remote.connection.createAnswer((sessionDescription) => {
+      remote.connection.setLocalDescription(sessionDescription);
       this.signal('answer', {
         target: senderId,
         payload: sessionDescription,
@@ -195,13 +207,15 @@ class WebRTC {
   }
 
   signalAnswer(senderId, answer) {
-    if (this.remote && this.remote.id === senderId) {
-      this.remote.connection.setRemoteDescription(new RTCSessionDescription(answer));
+    const existing = this.remotes.find(remote => remote.id === senderId);
+    if (existing) {
+      existing.connection.setRemoteDescription(new RTCSessionDescription(answer));
     }
   }
 
-  addPeerConnection(id) {
-    if (this.remote && this.remote.id === id) {
+  addPeerConnection(senderId) {
+    const existing = this.remotes.find(remote => remote.id === senderId);
+    if (existing) {
       const pc = new RTCPeerConnection({ iceServers: WebRTC.iceServers }, this.mediaConstraints);
       pc.onicecandidate = (event) => {
         if (event.candidate) {
@@ -213,7 +227,7 @@ class WebRTC {
                 id: event.candidate.sdpMid,
                 candidate: event.candidate.candidate,
               },
-              target: id,
+              target: senderId,
             });
         }
       };
@@ -230,9 +244,9 @@ class WebRTC {
         }
       };
       pc.onremovestream = () => {
-        if (this.remote && this.remote.id === id) {
-          this.remote.connection = null;
-          this.remote.remoteStreamURL = null;
+        if (existing) {
+          existing.connection = null;
+          existing.remoteStreamURL = null;
         }
       };
       if (this.localStream) {
@@ -240,7 +254,7 @@ class WebRTC {
       }
       pc.streamURL = '';
       pc.stream = '';
-      this.remote.connection = pc;
+      existing.connection = pc;
       this.trigger(WebRTC.EVENT_FOUND_REMOTE);
     }
   }
