@@ -65,13 +65,28 @@ class WebRTC {
     }
   }
 
-  constructor(endpoint, room, id, localStream) {
-    this.endpoint = endpoint;
-    this.room = room;
-    this.id = id;
+  static guid() {
+    function s4() {
+      return Math.floor((1 + Math.random()) * 0x10000)
+        .toString(16)
+        .substring(1);
+    }
+    return s4() + s4() + s4();
+  }
+
+  constructor(props) {
+    if (!props || typeof props !== 'object' || !props.endpoint || !props.room) {
+      throw new Error('Specify endpoint and room in constructor');
+    }
+
+    this.endpoint = props.endpoint;
+    this.room = props.room;
+    this.roomType = props.roomType;
+    this.master = this.roomType === WebRTC.ROOM_TYPE_1_TO_N && props.master;
+    this.id = props.id || WebRTC.guid();
     this.remote = null;
     this.listeners = {};
-    this.localStream = localStream;
+    this.localStream = props.localStream;
     this.destroyed = false;
     this.mediaConstraints = {
       mandatory: {
@@ -84,6 +99,7 @@ class WebRTC {
       this.signal('join', {
         id: this.id,
         room: this.room,
+        type: this.roomType,
       });
       this.trigger(WebRTC.EVENT_START);
     };
@@ -254,6 +270,9 @@ class WebRTC {
     }
   }
 }
+
+WebRTC.ROOM_TYPE_N_TO_N = 'n-to-n';
+WebRTC.ROOM_TYPE_1_TO_N = '1-to-n';
 
 WebRTC.EVENT_START = 'start';
 WebRTC.EVENT_END = 'end';
